@@ -1,8 +1,11 @@
 import argparse
 import base64
 import configparser
+import os
 import random
+import subprocess
 import sys
+import tempfile
 from binascii import hexlify, unhexlify
 from bitstring import Bits, BitArray
 from collections import namedtuple
@@ -30,6 +33,32 @@ def deserialize_barcode(barcode):
     result = [barcode[i:i + 2].uint for i in range(0, len(barcode), 2)]
     size = int(len(result) ** 0.5)
     return result[:size * size]
+
+
+def view_barcode(barcode, viewer):
+    if viewer:
+        path = None
+        try:
+            svg = caurus.barcode.to_svg(barcode, background=True)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False) as f:
+                path = f.name
+                f.write(svg)
+            subprocess.run([viewer, path])
+            input('Press enter to continue after you scanned the barcode...')
+        finally:
+            if path:
+                os.remove(path)
+    else:
+        print('Barcode: {}'.format(serialize_barcode(barcode)))
+
+
+def input_code(length):
+    while True:
+        code = input('Code: ')
+        if code == '':
+            return None
+        elif len(code) == length and code.isdigit():
+            return code
 
 
 def build_context(args):
@@ -84,47 +113,29 @@ def server_init(args):
 
 def server_activate(args):
     context = build_context(args)
-    account, account_id, account_key, code, barcode = caurus.server.start_activation(context)
-    print('Barcode: {}'.format(serialize_barcode(barcode)))
-    print('After you verified the code is {}, you can continue with:'.format(code))
-    print('{} server continue {} {} {}'.format(
-        args.prog,
-        account,
-        hexlify(account_id).decode(),
-        hexlify(account_key).decode()))
 
+    account, account_id, account_key, code, barcode = caurus.server.start_activation(context, args.account)
+    view_barcode(barcode, args.viewer)
+    if input_code(7) != code:
+        print('Invalid code', file=sys.stderr)
+        return 1
 
-def server_continue(args):
-    context = build_context(args)
-    state, barcode = caurus.server.continue_activation(
-        args.account,
-        unhexlify(args.identifier),
-        unhexlify(args.key),
-        context)
-    state = '.'.join([
-        args.identifier,
-        args.key,
-        hexlify(state[0]).decode(),
-        hexlify(state[1]).decode(),
-    ])
-    print('Barcode: {}'.format(serialize_barcode(barcode)))
-    print('Complete the activation run:')
-    print('{} server complete {} {} CODE'.format(args.prog, args.account, state))
+    state, barcode = caurus.server.continue_activation(account, account_id, account_key, context)
+    view_barcode(barcode, args.viewer)
+    code = input_code(7)
+    if code is None:
+        return 1
 
-
-def server_complete(args):
-    context = build_context(args)
-    account_id, account_key, state0, state1 = map(unhexlify, args.state.split('.'))
-
-    account_salt = caurus.server.complete_activation(args.account, account_key, (state0, state1), args.code, context)
+    account_salt = caurus.server.complete_activation(args.account, account_key, state, code, context)
     if not account_salt:
         print('Invalid code', file=sys.stderr)
         return 1
 
+    print()
     print('Client successfully confirmed! To use your account, add the following to your configuration file:')
     print()
     config = configparser.ConfigParser()
-    config['account.' + str(args.account)] = {
+    config['account.' + str(account)] = {
         'id': hexlify(account_id).decode(),
         'key': hexlify(account_key).decode(),
         'salt': hexlify(account_salt).decode(),
@@ -157,8 +168,8 @@ def server_transaction(args):
 
     code, barcode = caurus.server.transaction(args.account, account.key, account.salt, message, context)
 
-    print('Barcode: {}', serialize_barcode(barcode))
-    print('Code: {}', code)
+    view_barcode(barcode, args.viewer)
+    print('Code: {}'.format(code))
 
 
 def main():
@@ -168,6 +179,11 @@ def main():
             type=argparse.FileType(mode=mode),
             help='path to the configuration file',
             default='caurus.cfg')
+
+    def add_viewer_argument(parser):
+        parser.add_argument(
+            '--viewer',
+            help='path to a SVG viewer')
 
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()  # (required=True)
@@ -192,27 +208,16 @@ def main():
     add_config_argument(parser_server_init, 'x')
     parser_server_init.add_argument('id', type=int, nargs='?', help='service ID', default=1)
 
-    parser_server_init = subparsers_server.add_parser('activate')
-    parser_server_init.set_defaults(func=server_activate)
-    add_config_argument(parser_server_init)
-
-    parser_server_continue = subparsers_server.add_parser('continue')
-    parser_server_continue.set_defaults(func=server_continue)
-    add_config_argument(parser_server_continue)
-    parser_server_continue.add_argument('account', type=int, help='account number')
-    parser_server_continue.add_argument('identifier', help='account identifier')
-    parser_server_continue.add_argument('key', help='account key')
-
-    parser_server_complete = subparsers_server.add_parser('complete')
-    parser_server_complete.set_defaults(func=server_complete)
-    add_config_argument(parser_server_complete)
-    parser_server_complete.add_argument('account', type=int, help='account number')
-    parser_server_complete.add_argument('state', help='activation state')
-    parser_server_complete.add_argument('code', help='confirmation code')
+    parser_server_activate = subparsers_server.add_parser('activate')
+    parser_server_activate.set_defaults(func=server_activate)
+    add_config_argument(parser_server_activate)
+    add_viewer_argument(parser_server_activate)
+    parser_server_activate.add_argument('account', type=int, nargs='?', help='account number')
 
     parser_server_transaction = subparsers_server.add_parser('transaction')
     parser_server_transaction.set_defaults(func=server_transaction)
     add_config_argument(parser_server_transaction)
+    add_viewer_argument(parser_server_transaction)
     parser_server_transaction.add_argument('account', type=int, help='account number')
     parser_server_transaction.add_argument('message', nargs='*', help='message')
 

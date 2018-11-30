@@ -89,8 +89,11 @@ def build_barcode(type, account, payload, encryption_key, mac_key, context):
     return message.bytes
 
 
-def start_activation(context):
-    account = context.random.getrandbits(10)
+def start_activation(context, account=None):
+    if account is None:
+        account = context.random.getrandbits(10)
+    elif not (0 <= account < (1 << 10)):
+        raise ValueError('Invalid account number')
     id = caurus._random_bytes(16, context)
     key = caurus._random_bytes(16, context)
 
