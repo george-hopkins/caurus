@@ -1,6 +1,8 @@
 Caurus
 ======
 
+[![PyPI](https://img.shields.io/pypi/v/caurus.svg)](https://pypi.org/project/caurus/)
+
 ![Example](./docs/example.svg)
 
 **Caurus** is an open implementation of a verification scheme based on 2D barcodes.
