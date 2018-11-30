@@ -120,7 +120,7 @@ def continue_activation(account, id, key, context):
     return (salt_server, barcode), encode_barcode(barcode)
 
 
-def complete_activation(account, key, state, code, context):
+def complete_activation(key, state, code, context):
     code = _deshuffle_code(code)
     a = Bits(bytes=state[1])[108:108 + 128].bytes
     c = _code_c(code, a, 13, 7)

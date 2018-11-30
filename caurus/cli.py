@@ -126,7 +126,7 @@ def server_activate(args):
     if code is None:
         return 1
 
-    account_salt = caurus.server.complete_activation(args.account, account_key, state, code, context)
+    account_salt = caurus.server.complete_activation(account_key, state, code, context)
     if not account_salt:
         print('Invalid code', file=sys.stderr)
         return 1
