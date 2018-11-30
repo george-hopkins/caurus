@@ -3,6 +3,8 @@ from setuptools import setup
 setup(name='caurus',
       version='0.1.0',
       description='verification scheme based on 2D barcodes',
+      long_description=open('README.md').read(),
+      long_description_content_type='text/markdown',
       classifiers=[
           'Development Status :: 3 - Alpha',
           'License :: OSI Approved :: MIT License',
